@@ -1,5 +1,6 @@
 package com.auriga.clinic.controller;
 
+import com.auriga.clinic.service.AppointmentService;
 import com.auriga.clinic.dto.SetClockRequest;
 import com.auriga.clinic.service.ClockService;
 import com.auriga.clinic.service.NotificationService;
@@ -16,26 +17,31 @@ public class ClockController {
     private final ClockService clockService;
     private final NotificationService notificationService;
 
-    public ClockController(ClockService clockService,
-                           NotificationService notificationService) {
-        this.clockService = clockService;
-        this.notificationService = notificationService;
-    }
+   private final AppointmentService appointmentService;
+
+public ClockController(ClockService clockService,
+                       NotificationService notificationService,
+                       AppointmentService appointmentService) {
+    this.clockService = clockService;
+    this.notificationService = notificationService;
+    this.appointmentService = appointmentService;
+}
 
     @PostMapping
-    public ResponseEntity<Map<String, LocalDateTime>> setClock(
-            @RequestBody SetClockRequest req) {
+public ResponseEntity<Map<String, LocalDateTime>> setClock(
+        @RequestBody SetClockRequest req) {
 
-        clockService.setTime(req.getTime());
+    clockService.setTime(req.getTime());
 
-        notificationService.sendTodaysReminders(
-                clockService.now()
-        );
+    LocalDateTime now = clockService.now();
 
-        return ResponseEntity.ok(
-                Map.of("currentTime", clockService.now())
-        );
-    }
+    notificationService.sendTodaysReminders(now);
+    appointmentService.markNoShows(now);
+
+    return ResponseEntity.ok(
+            Map.of("currentTime", now)
+    );
+}
 
     @GetMapping
     public ResponseEntity<Map<String, LocalDateTime>> getClock() {

@@ -1,4 +1,3 @@
-
 package com.auriga.clinic.service;
 
 import com.auriga.clinic.exception.ResourceNotFoundException;
@@ -130,6 +129,22 @@ public class AppointmentService {
         }
     }
 
+    @Transactional
+    public void markNoShows(LocalDateTime clockNow) {
+
+        List<Appointment> appointments = appointmentRepo.findAll().stream()
+                .filter(a -> a.getStatus() == AppointmentStatus.BOOKED)
+                .filter(a -> !clockNow.isBefore(
+                        a.getStartTime().plusMinutes(30)
+                ))
+                .toList();
+
+        for (Appointment appointment : appointments) {
+            appointment.setStatus(AppointmentStatus.NO_SHOW);
+            appointmentRepo.save(appointment);
+        }
+    }
+
     public List<Appointment> getDoctorSchedule(Long doctorId) {
         return appointmentRepo.findByDoctorIdAndStatusOrderByStartTimeAsc(
                 doctorId,
@@ -145,4 +160,3 @@ public class AppointmentService {
         return appointmentRepo.findByPatientId(patientId);
     }
 }
-

@@ -2,5 +2,7 @@ package com.auriga.clinic.model;
 
 public enum AppointmentStatus {
     BOOKED,
-    CANCELLED
+    CANCELLED,
+    COMPLETED,
+    NO_SHOW
 }
