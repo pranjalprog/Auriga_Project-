@@ -1,5 +1,7 @@
 package com.auriga.clinic.service;
 
+import com.auriga.clinic.exception.ResourceNotFoundException;
+import com.auriga.clinic.exception.SlotConflictException;
 import com.auriga.clinic.model.*;
 import com.auriga.clinic.repository.*;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -18,7 +20,6 @@ public class AppointmentService {
     private final DoctorRepository doctorRepo;
     private final PatientRepository patientRepo;
 
-    // Business rules — README mein bhi yahi document karna
     private static final long LATE_CANCEL_THRESHOLD_HOURS = 2;
     private static final BigDecimal LATE_CANCEL_FEE = new BigDecimal("100.00");
 
@@ -39,9 +40,9 @@ public class AppointmentService {
         }
 
         Doctor doctor = doctorRepo.findById(doctorId)
-                .orElseThrow(() -> new IllegalArgumentException("Doctor not found: " + doctorId));
+                .orElseThrow(() -> new ResourceNotFoundException("Doctor not found: " + doctorId));
         Patient patient = patientRepo.findById(patientId)
-                .orElseThrow(() -> new IllegalArgumentException("Patient not found: " + patientId));
+                .orElseThrow(() -> new ResourceNotFoundException("Patient not found: " + patientId));
 
         Appointment appointment = Appointment.builder()
                 .doctor(doctor)
@@ -53,11 +54,9 @@ public class AppointmentService {
                 .build();
 
         try {
-            // DB ka exclusion constraint (V2 migration) yahin par overlap
-            // hote hi exception throw karega — yehi hamari real safety net hai
             return appointmentRepo.save(appointment);
         } catch (DataIntegrityViolationException e) {
-            throw new IllegalStateException(
+            throw new SlotConflictException(
                     "This doctor already has an appointment overlapping this time slot");
         }
     }
@@ -65,7 +64,7 @@ public class AppointmentService {
     @Transactional
     public Appointment cancelAppointment(Long appointmentId, LocalDateTime cancelledAt) {
         Appointment appointment = appointmentRepo.findById(appointmentId)
-                .orElseThrow(() -> new IllegalArgumentException(
+                .orElseThrow(() -> new ResourceNotFoundException(
                         "Appointment not found: " + appointmentId));
 
         if (appointment.getStatus() == AppointmentStatus.CANCELLED) {
