@@ -1,3 +1,4 @@
+
 package com.auriga.clinic.service;
 
 import com.auriga.clinic.exception.ResourceNotFoundException;
@@ -19,30 +20,36 @@ public class AppointmentService {
     private final AppointmentRepository appointmentRepo;
     private final DoctorRepository doctorRepo;
     private final PatientRepository patientRepo;
+    private final ClockService clockService;
 
     private static final long LATE_CANCEL_THRESHOLD_HOURS = 2;
     private static final BigDecimal LATE_CANCEL_FEE = new BigDecimal("100.00");
 
     public AppointmentService(AppointmentRepository appointmentRepo,
-                               DoctorRepository doctorRepo,
-                               PatientRepository patientRepo) {
+                              DoctorRepository doctorRepo,
+                              PatientRepository patientRepo,
+                              ClockService clockService) {
         this.appointmentRepo = appointmentRepo;
         this.doctorRepo = doctorRepo;
         this.patientRepo = patientRepo;
+        this.clockService = clockService;
     }
 
     @Transactional
     public Appointment bookAppointment(Long doctorId, Long patientId,
-                                        LocalDateTime start, LocalDateTime end) {
+                                       LocalDateTime start, LocalDateTime end) {
 
         if (!end.isAfter(start)) {
             throw new IllegalArgumentException("End time must be after start time");
         }
 
         Doctor doctor = doctorRepo.findById(doctorId)
-                .orElseThrow(() -> new ResourceNotFoundException("Doctor not found: " + doctorId));
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Doctor not found: " + doctorId));
+
         Patient patient = patientRepo.findById(patientId)
-                .orElseThrow(() -> new ResourceNotFoundException("Patient not found: " + patientId));
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Patient not found: " + patientId));
 
         Appointment appointment = Appointment.builder()
                 .doctor(doctor)
@@ -62,7 +69,8 @@ public class AppointmentService {
     }
 
     @Transactional
-    public Appointment cancelAppointment(Long appointmentId, LocalDateTime cancelledAt) {
+    public Appointment cancelAppointment(Long appointmentId) {
+
         Appointment appointment = appointmentRepo.findById(appointmentId)
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Appointment not found: " + appointmentId));
@@ -71,19 +79,62 @@ public class AppointmentService {
             throw new IllegalStateException("Appointment is already cancelled");
         }
 
-        Duration noticeGiven = Duration.between(cancelledAt, appointment.getStartTime());
+        LocalDateTime cancelledAt = clockService.now();
+
+        Duration noticeGiven = Duration.between(
+                cancelledAt,
+                appointment.getStartTime()
+        );
+
         boolean isLateCancel = noticeGiven.toHours() < LATE_CANCEL_THRESHOLD_HOURS;
 
         appointment.setStatus(AppointmentStatus.CANCELLED);
         appointment.setCancelledAt(cancelledAt);
-        appointment.setCancellationFee(isLateCancel ? LATE_CANCEL_FEE : BigDecimal.ZERO);
+        appointment.setCancellationFee(
+                isLateCancel ? LATE_CANCEL_FEE : BigDecimal.ZERO
+        );
 
         return appointmentRepo.save(appointment);
     }
 
+    @Transactional
+    public Appointment rescheduleAppointment(Long appointmentId,
+                                             LocalDateTime newStart,
+                                             LocalDateTime newEnd) {
+
+        if (!newEnd.isAfter(newStart)) {
+            throw new IllegalArgumentException(
+                    "End time must be after start time"
+            );
+        }
+
+        Appointment appointment = appointmentRepo.findById(appointmentId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Appointment not found: " + appointmentId));
+
+        if (appointment.getStatus() == AppointmentStatus.CANCELLED) {
+            throw new IllegalStateException(
+                    "Cannot reschedule a cancelled appointment"
+            );
+        }
+
+        appointment.setStartTime(newStart);
+        appointment.setEndTime(newEnd);
+
+        try {
+            return appointmentRepo.save(appointment);
+        } catch (DataIntegrityViolationException e) {
+            throw new SlotConflictException(
+                    "New time conflicts with another appointment for this doctor"
+            );
+        }
+    }
+
     public List<Appointment> getDoctorSchedule(Long doctorId) {
         return appointmentRepo.findByDoctorIdAndStatusOrderByStartTimeAsc(
-                doctorId, AppointmentStatus.BOOKED);
+                doctorId,
+                AppointmentStatus.BOOKED
+        );
     }
 
     public List<Patient> searchPatientsByName(String name) {
@@ -94,3 +145,4 @@ public class AppointmentService {
         return appointmentRepo.findByPatientId(patientId);
     }
 }
+
